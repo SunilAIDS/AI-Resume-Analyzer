@@ -12,6 +12,7 @@ function App() {
 
   const [loading, setLoading] = useState(false)
   const [showResult, setShowResult] = useState(false)
+  const [statusMsg, setStatusMsg] = useState("")
 
   const [result, setResult] = useState({
     resumeText: "",
@@ -28,7 +29,6 @@ function App() {
   // =========================
   const handleFile = (e) => {
     const selected = e.target.files[0]
-
     if (selected) {
       setFile(selected)
       setFileName(selected.name)
@@ -41,17 +41,20 @@ function App() {
   const analyzeResume = async () => {
 
     if (!file) {
-      alert("Upload a PDF first")
+      alert("Please upload a PDF file")
       return
     }
 
     try {
       setLoading(true)
       setShowResult(false)
+      setStatusMsg("Uploading resume...")
 
       const formData = new FormData()
       formData.append("file", file)
       formData.append("job_description", jobDesc)
+
+      setStatusMsg("Analyzing resume with AI...")
 
       const response = await axios.post(
         "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
@@ -64,7 +67,16 @@ function App() {
         }
       )
 
-      const data = response.data
+      console.log("STATUS:", response.status)
+      console.log("DATA:", response.data)
+
+      const data = response.data || {}
+
+      if (response.status !== 200 || data.error) {
+        setStatusMsg("Error from backend")
+        alert(data.error || "Backend error")
+        return
+      }
 
       setResult({
         resumeText: data.resume_text || "",
@@ -76,11 +88,13 @@ function App() {
         aiFeedback: data.ai_feedback || ""
       })
 
+      setStatusMsg("Analysis complete")
       setShowResult(true)
 
     } catch (error) {
 
       console.log(error)
+      setStatusMsg("Request failed")
 
       if (error.response) {
         alert("Backend Error: " + error.response.status)
@@ -103,6 +117,7 @@ function App() {
 
       <div className="max-w-6xl mx-auto">
 
+        {/* HEADER */}
         <h1 className="text-5xl font-bold text-center mt-10">
           AI Resume Analyzer
         </h1>
@@ -111,7 +126,7 @@ function App() {
           Upload resume and get ATS analysis
         </p>
 
-        {/* INPUT */}
+        {/* INPUT SECTION */}
         <div className="bg-gray-900 p-8 rounded-2xl mt-10">
 
           <input
@@ -127,7 +142,7 @@ function App() {
           )}
 
           <textarea
-            placeholder="Job Description"
+            placeholder="Paste Job Description..."
             value={jobDesc}
             onChange={(e) => setJobDesc(e.target.value)}
             className="w-full mt-5 p-4 bg-gray-800 rounded"
@@ -139,10 +154,24 @@ function App() {
             disabled={loading}
             className="mt-5 bg-blue-600 px-6 py-3 rounded"
           >
-            {loading ? "Analyzing..." : "Analyze"}
+            {loading ? "Analyzing..." : "Analyze Resume"}
           </button>
 
+          {/* STATUS */}
+          {statusMsg && (
+            <p className="text-yellow-400 mt-3">
+              {statusMsg}
+            </p>
+          )}
+
         </div>
+
+        {/* LOADING */}
+        {loading && (
+          <div className="text-center mt-8 text-yellow-400">
+            Processing your resume...
+          </div>
+        )}
 
         {/* RESULTS */}
         {showResult && (
@@ -156,11 +185,38 @@ function App() {
               Match Score: {result.matchScore}%
             </div>
 
+            {/* SKILLS */}
+            <div className="bg-gray-900 p-5 rounded">
+              <h2>Skills</h2>
+              {result.skills.length > 0 ? result.skills.join(", ") : "No skills detected"}
+            </div>
+
+            {/* MATCHED SKILLS */}
+            <div className="bg-gray-900 p-5 rounded">
+              <h2>Matched Skills</h2>
+              {result.matchedSkills.length > 0
+                ? result.matchedSkills.join(", ")
+                : "No matched skills"}
+            </div>
+
+            {/* AI FEEDBACK */}
             <div className="bg-gray-900 p-5 rounded md:col-span-2">
-              <h2>AI Feedback</h2>
-              <pre className="whitespace-pre-wrap">
+              <h2 className="text-xl font-bold mb-2">
+                AI Feedback
+              </h2>
+              <pre className="whitespace-pre-wrap text-gray-300">
                 {result.aiFeedback}
               </pre>
+            </div>
+
+            {/* RESUME TEXT */}
+            <div className="bg-gray-900 p-5 rounded md:col-span-2">
+              <h2 className="text-xl font-bold mb-2">
+                Extracted Resume Text
+              </h2>
+              <p className="text-gray-300 whitespace-pre-wrap">
+                {result.resumeText.slice(0, 2000)}
+              </p>
             </div>
 
           </div>
