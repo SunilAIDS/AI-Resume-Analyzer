@@ -3,13 +3,14 @@ import { useState } from "react"
 
 function App() {
 
+  const [file, setFile] = useState(null)
   const [fileName, setFileName] = useState("")
-  const [showResult, setShowResult] = useState(false)
+
   const [loading, setLoading] = useState(false)
+  const [showResult, setShowResult] = useState(false)
 
   const [resumeText, setResumeText] = useState("")
   const [skills, setSkills] = useState([])
-
   const [atsScore, setAtsScore] = useState(0)
 
   const [jobDesc, setJobDesc] = useState("")
@@ -19,21 +20,26 @@ function App() {
 
   const [suggestions, setSuggestions] = useState([])
 
+  const [aiFeedback, setAiFeedback] = useState("")
+
   const handleFile = (e) => {
 
-    const file = e.target.files[0]
+    const selectedFile = e.target.files[0]
 
-    if (file) {
-      setFileName(file.name)
+    if (selectedFile) {
+
+      setFile(selectedFile)
+      setFileName(selectedFile.name)
+
     }
 
   }
 
   const analyzeResume = async () => {
 
-    if (!fileName) {
+    if (!file) {
 
-      alert("Please upload a resume first")
+      alert("Please upload a PDF resume first")
       return
 
     }
@@ -41,26 +47,14 @@ function App() {
     try {
 
       setLoading(true)
-
-      const fileInput = document.querySelector('input[type="file"]')
-
-      if (!fileInput.files[0]) {
-
-        alert("No file selected")
-        setLoading(false)
-
-        return
-
-      }
-
-      const file = fileInput.files[0]
+      setShowResult(false)
 
       const formData = new FormData()
 
       formData.append("file", file)
       formData.append("job_description", jobDesc)
 
-      console.log("Sending request...")
+      console.log("Uploading Resume...")
 
       const response = await axios.post(
         "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
@@ -75,17 +69,19 @@ function App() {
 
       console.log(response.data)
 
-      setResumeText(response.data.resume_text)
+      setResumeText(response.data.resume_text || "")
 
-      setSkills(response.data.skills)
+      setSkills(response.data.skills || [])
 
-      setAtsScore(response.data.ats_score)
+      setAtsScore(response.data.ats_score || 0)
 
-      setMatchScore(response.data.match_score)
+      setMatchScore(response.data.match_score || 0)
 
-      setMatchedSkills(response.data.matched_skills)
+      setMatchedSkills(response.data.matched_skills || [])
 
-      setSuggestions(response.data.suggestions)
+      setSuggestions(response.data.suggestions || [])
+
+      setAiFeedback(response.data.ai_feedback || "")
 
       setShowResult(true)
 
@@ -99,23 +95,21 @@ function App() {
       if (error.response) {
 
         console.log(error.response.data)
-        console.log(error.response.status)
 
-        alert("Backend Error: " + error.response.status)
+        alert(
+          "Backend Error: " +
+          error.response.status
+        )
 
       }
 
       else if (error.request) {
-
-        console.log(error.request)
 
         alert("No response from backend")
 
       }
 
       else {
-
-        console.log(error.message)
 
         alert(error.message)
 
@@ -135,19 +129,23 @@ function App() {
 
     <div className="min-h-screen bg-gray-950 text-white p-6">
 
-      <div className="max-w-5xl mx-auto">
+      <div className="max-w-6xl mx-auto">
 
         <h1 className="text-5xl font-bold text-center mt-10">
           AI Resume Analyzer
         </h1>
 
         <p className="text-center text-gray-400 mt-4">
-          Upload your resume and get AI-powered ATS analysis.
+          Upload your resume and get AI-powered ATS analysis
         </p>
+
+        {/* Upload Section */}
 
         <div className="bg-gray-900 p-10 rounded-2xl mt-10 shadow-lg">
 
           <input
+            id="resume-upload"
+            name="resume-upload"
             type="file"
             accept=".pdf"
             onChange={handleFile}
@@ -167,6 +165,8 @@ function App() {
           }
 
           <textarea
+            id="job-description"
+            name="job-description"
             placeholder="Paste Job Description Here..."
             value={jobDesc}
             onChange={(e) => setJobDesc(e.target.value)}
@@ -176,26 +176,39 @@ function App() {
 
           <button
             onClick={analyzeResume}
+            disabled={loading}
             className="mt-6 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold"
           >
 
-            Analyze Resume
+            {
+              loading
+              ? "Analyzing..."
+              : "Analyze Resume"
+            }
 
           </button>
 
         </div>
 
+        {/* Loading */}
+
         {
 
           loading && (
 
-            <p className="text-yellow-400 mt-6 text-center text-xl">
-              Analyzing Resume...
-            </p>
+            <div className="text-center mt-8">
+
+              <p className="text-yellow-400 text-xl">
+                AI is analyzing your resume...
+              </p>
+
+            </div>
 
           )
 
         }
+
+        {/* Results */}
 
         {
 
@@ -217,7 +230,7 @@ function App() {
 
               </div>
 
-              {/* JOB MATCH SCORE */}
+              {/* MATCH SCORE */}
 
               <div className="bg-gray-900 p-6 rounded-2xl">
 
@@ -243,13 +256,16 @@ function App() {
 
                   {
 
-                    skills.map((skill, index) => (
+                    skills.length > 0
+                    ? skills.map((skill, index) => (
 
                       <li key={index}>
-                        {skill.charAt(0).toUpperCase() + skill.slice(1)}
+                        • {skill}
                       </li>
 
                     ))
+
+                    : <p>No skills detected</p>
 
                   }
 
@@ -269,13 +285,16 @@ function App() {
 
                   {
 
-                    matchedSkills.map((skill, index) => (
+                    matchedSkills.length > 0
+                    ? matchedSkills.map((skill, index) => (
 
                       <li key={index}>
-                        {skill.charAt(0).toUpperCase() + skill.slice(1)}
+                        • {skill}
                       </li>
 
                     ))
+
+                    : <p>No matched skills found</p>
 
                   }
 
@@ -295,7 +314,8 @@ function App() {
 
                   {
 
-                    suggestions.map((item, index) => (
+                    suggestions.length > 0
+                    ? suggestions.map((item, index) => (
 
                       <li
                         key={index}
@@ -306,13 +326,37 @@ function App() {
 
                     ))
 
+                    : <p>No suggestions available</p>
+
                   }
 
                 </ul>
 
               </div>
 
-              {/* EXTRACTED RESUME TEXT */}
+              {/* OPENAI AI FEEDBACK */}
+
+              {
+
+                aiFeedback && (
+
+                  <div className="bg-gray-900 p-6 rounded-2xl md:col-span-2">
+
+                    <h2 className="text-2xl font-bold mb-4 text-purple-400">
+                      AI Career Feedback
+                    </h2>
+
+                    <p className="text-gray-300 whitespace-pre-wrap">
+                      {aiFeedback}
+                    </p>
+
+                  </div>
+
+                )
+
+              }
+
+              {/* RESUME TEXT */}
 
               <div className="bg-gray-900 p-6 rounded-2xl md:col-span-2">
 
@@ -321,7 +365,7 @@ function App() {
                 </h2>
 
                 <p className="text-gray-300 whitespace-pre-wrap">
-                  {resumeText.slice(0, 1500)}
+                  {resumeText.slice(0, 2000)}
                 </p>
 
               </div>
