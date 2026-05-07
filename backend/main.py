@@ -7,17 +7,18 @@ from groq import Groq
 app = FastAPI()
 
 # =========================
-# ENV SAFETY CHECK
+# GROQ SETUP (SAFE)
 # =========================
 api_key = os.getenv("GROQ_API_KEY")
 
 if not api_key:
-    raise Exception("❌ GROQ_API_KEY not set in environment variables")
+    print("❌ WARNING: GROQ_API_KEY not found")
+    api_key = "dummy_key"
 
 client = Groq(api_key=api_key)
 
 # =========================
-# CORS CONFIG
+# CORS
 # =========================
 app.add_middleware(
     CORSMiddleware,
@@ -31,14 +32,14 @@ app.add_middleware(
 )
 
 # =========================
-# HOME ROUTE
+# HEALTH CHECK
 # =========================
 @app.get("/")
 def home():
     return {"message": "Backend is running"}
 
 # =========================
-# GROQ AI FUNCTION
+# GROQ FUNCTION (SAFE)
 # =========================
 def get_ai_response(prompt: str):
     try:
@@ -52,10 +53,10 @@ def get_ai_response(prompt: str):
 
     except Exception as e:
         print("❌ GROQ ERROR:", e)
-        return "AI service temporarily unavailable. Please try again."
+        return "AI service temporarily unavailable."
 
 # =========================
-# MAIN ENDPOINT
+# MAIN API
 # =========================
 @app.post("/upload-resume/")
 async def upload_resume(
@@ -63,117 +64,92 @@ async def upload_resume(
     job_description: str = Form("")
 ):
 
-    text = ""
+    try:
+        text = ""
 
-    # =========================
-    # PDF EXTRACTION
-    # =========================
-    with pdfplumber.open(file.file) as pdf:
-        for page in pdf.pages:
-            extracted = page.extract_text()
-            if extracted:
-                text += extracted + "\n"
+        # =========================
+        # PDF EXTRACTION
+        # =========================
+        with pdfplumber.open(file.file) as pdf:
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted + "\n"
 
-    # =========================
-    # LIMIT TEXT (IMPORTANT FOR SPEED)
-    # =========================
-    text = text[:4000]
-    job_description = job_description[:2000]
+        # LIMIT SIZE (IMPORTANT)
+        text = text[:4000]
+        job_description = job_description[:2000]
 
-    lower_text = text.lower()
-    job_desc_lower = job_description.lower()
+        lower_text = text.lower()
+        job_desc_lower = job_description.lower()
 
-    # =========================
-    # SKILLS DB
-    # =========================
-    skills_db = [
-        "python", "react", "sql", "machine learning",
-        "tensorflow", "pytorch", "fastapi", "docker",
-        "aws", "opencv", "flask", "django", "linux",
-        "numpy", "pandas", "scikit learn"
-    ]
+        # =========================
+        # SKILLS
+        # =========================
+        skills_db = [
+            "python", "react", "sql", "machine learning",
+            "tensorflow", "pytorch", "fastapi", "docker",
+            "aws", "opencv", "flask", "django", "linux",
+            "numpy", "pandas", "scikit learn"
+        ]
 
-    # =========================
-    # DETECTED SKILLS
-    # =========================
-    detected_skills = [
-        skill for skill in skills_db if skill in lower_text
-    ]
+        detected_skills = [s for s in skills_db if s in lower_text]
+        missing_skills = [s for s in skills_db if s not in detected_skills]
+        matched_skills = [s for s in detected_skills if s in job_desc_lower]
 
-    # =========================
-    # ATS SCORE
-    # =========================
-    ats_score = min(len(detected_skills) * 10, 100)
+        ats_score = min(len(detected_skills) * 10, 100)
 
-    # =========================
-    # MISSING SKILLS
-    # =========================
-    missing_skills = [
-        skill for skill in skills_db if skill not in detected_skills
-    ]
+        match_score = int(
+            (len(matched_skills) / len(skills_db)) * 100
+        ) if skills_db else 0
 
-    # =========================
-    # MATCHED SKILLS
-    # =========================
-    matched_skills = [
-        skill for skill in detected_skills if skill in job_desc_lower
-    ]
+        suggestions = [
+            f"Consider adding '{s}' to your resume."
+            for s in missing_skills
+        ]
 
-    # =========================
-    # SUGGESTIONS
-    # =========================
-    suggestions = [
-        f"Consider adding '{skill}' to your resume."
-        for skill in missing_skills
-    ]
-
-    # =========================
-    # MATCH SCORE
-    # =========================
-    match_score = int(
-        (len(matched_skills) / len(skills_db)) * 100
-    ) if skills_db else 0
-
-    # =========================
-    # AI PROMPT
-    # =========================
-    prompt = f"""
+        # =========================
+        # AI PROMPT
+        # =========================
+        prompt = f"""
 You are an ATS Resume Expert.
 
-Analyze the resume vs job description.
+Analyze resume vs job description.
 
-Give:
-1. Resume strengths
-2. Missing skills
-3. ATS optimization tips
-4. Improvement suggestions
-5. Hiring chance (percentage)
+Return:
+- Strengths
+- Missing skills
+- ATS optimization tips
+- Improvements
+- Hiring chance %
 
 Resume:
 {text}
 
 Job Description:
 {job_description}
-
-Be concise and professional.
 """
 
-    # =========================
-    # AI RESPONSE
-    # =========================
-    ai_feedback = get_ai_response(prompt)
+        ai_feedback = get_ai_response(prompt)
 
-    # =========================
-    # RESPONSE
-    # =========================
-    return {
-        "filename": file.filename,
-        "resume_text": text,
-        "skills": detected_skills,
-        "missing_skills": missing_skills,
-        "ats_score": ats_score,
-        "match_score": match_score,
-        "matched_skills": matched_skills,
-        "suggestions": suggestions,
-        "ai_feedback": ai_feedback
-    }
+        # =========================
+        # RESPONSE
+        # =========================
+        return {
+            "filename": file.filename,
+            "resume_text": text,
+            "skills": detected_skills,
+            "missing_skills": missing_skills,
+            "ats_score": ats_score,
+            "match_score": match_score,
+            "matched_skills": matched_skills,
+            "suggestions": suggestions,
+            "ai_feedback": ai_feedback
+        }
+
+    except Exception as e:
+        print("❌ ENDPOINT ERROR:", e)
+        return {
+            "error": "Failed to process resume",
+            "details": str(e)
+        }
