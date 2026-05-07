@@ -4,32 +4,40 @@ import { useState } from "react"
 function App() {
 
   // =========================
-  // STATE MANAGEMENT
+  // INPUT STATE
   // =========================
   const [file, setFile] = useState(null)
   const [fileName, setFileName] = useState("")
   const [jobDesc, setJobDesc] = useState("")
 
+  // =========================
+  // UI STATE
+  // =========================
   const [loading, setLoading] = useState(false)
   const [showResult, setShowResult] = useState(false)
 
-  const [resumeText, setResumeText] = useState("")
-  const [skills, setSkills] = useState([])
-  const [atsScore, setAtsScore] = useState(0)
-  const [matchScore, setMatchScore] = useState(0)
-  const [matchedSkills, setMatchedSkills] = useState([])
-  const [suggestions, setSuggestions] = useState([])
-  const [aiFeedback, setAiFeedback] = useState("")
+  // =========================
+  // RESULT STATE
+  // =========================
+  const [result, setResult] = useState({
+    resumeText: "",
+    skills: [],
+    atsScore: 0,
+    matchScore: 0,
+    matchedSkills: [],
+    suggestions: [],
+    aiFeedback: ""
+  })
 
   // =========================
   // FILE HANDLER
   // =========================
   const handleFile = (e) => {
-    const selectedFile = e.target.files[0]
+    const selected = e.target.files[0]
 
-    if (selectedFile) {
-      setFile(selectedFile)
-      setFileName(selectedFile.name)
+    if (selected) {
+      setFile(selected)
+      setFileName(selected.name)
     }
   }
 
@@ -65,19 +73,22 @@ function App() {
       const data = response.data
 
       // =========================
-      // SET RESPONSE DATA
+      // SET ALL RESULTS TOGETHER
       // =========================
-      setResumeText(data.resume_text || "")
-      setSkills(data.skills || [])
-      setAtsScore(data.ats_score || 0)
-      setMatchScore(data.match_score || 0)
-      setMatchedSkills(data.matched_skills || [])
-      setSuggestions(data.suggestions || [])
-      setAiFeedback(data.ai_feedback || "")
+      setResult({
+        resumeText: data.resume_text || "",
+        skills: data.skills || [],
+        atsScore: data.ats_score || 0,
+        matchScore: data.match_score || 0,
+        matchedSkills: data.matched_skills || [],
+        suggestions: data.suggestions || [],
+        aiFeedback: data.ai_feedback || ""
+      })
 
       setShowResult(true)
 
     } catch (error) {
+
       console.log(error)
 
       if (error.response) {
@@ -110,7 +121,7 @@ function App() {
           Upload your resume and get AI-powered ATS analysis
         </p>
 
-        {/* UPLOAD BOX */}
+        {/* INPUT SECTION */}
         <div className="bg-gray-900 p-10 rounded-2xl mt-10 shadow-lg">
 
           <input
@@ -161,7 +172,7 @@ function App() {
             <div className="bg-gray-900 p-6 rounded-2xl">
               <h2 className="text-2xl font-bold mb-4">ATS Score</h2>
               <p className="text-5xl font-bold text-green-400">
-                {atsScore}%
+                {result.atsScore}%
               </p>
             </div>
 
@@ -169,7 +180,7 @@ function App() {
             <div className="bg-gray-900 p-6 rounded-2xl">
               <h2 className="text-2xl font-bold mb-4">Job Match Score</h2>
               <p className="text-5xl font-bold text-blue-400">
-                {matchScore}%
+                {result.matchScore}%
               </p>
             </div>
 
@@ -177,9 +188,9 @@ function App() {
             <div className="bg-gray-900 p-6 rounded-2xl">
               <h2 className="text-2xl font-bold mb-4">Detected Skills</h2>
 
-              {skills.length > 0 ? (
+              {result.skills.length > 0 ? (
                 <ul className="space-y-2 text-gray-300">
-                  {skills.map((skill, i) => (
+                  {result.skills.map((skill, i) => (
                     <li key={i}>• {skill}</li>
                   ))}
                 </ul>
@@ -194,9 +205,9 @@ function App() {
                 Matched Skills
               </h2>
 
-              {matchedSkills.length > 0 ? (
+              {result.matchedSkills.length > 0 ? (
                 <ul className="space-y-2 text-gray-300">
-                  {matchedSkills.map((skill, i) => (
+                  {result.matchedSkills.map((skill, i) => (
                     <li key={i}>• {skill}</li>
                   ))}
                 </ul>
@@ -211,9 +222,9 @@ function App() {
                 AI Suggestions
               </h2>
 
-              {suggestions.length > 0 ? (
+              {result.suggestions.length > 0 ? (
                 <ul className="space-y-3 text-gray-300">
-                  {suggestions.map((item, i) => (
+                  {result.suggestions.map((item, i) => (
                     <li key={i} className="bg-gray-800 p-3 rounded-lg">
                       {item}
                     </li>
@@ -225,14 +236,14 @@ function App() {
             </div>
 
             {/* AI FEEDBACK */}
-            {aiFeedback && (
+            {result.aiFeedback && (
               <div className="bg-gray-900 p-6 rounded-2xl md:col-span-2">
                 <h2 className="text-2xl font-bold mb-4 text-purple-400">
                   AI Career Feedback
                 </h2>
 
                 <p className="text-gray-300 whitespace-pre-wrap">
-                  {aiFeedback}
+                  {result.aiFeedback}
                 </p>
               </div>
             )}
@@ -244,7 +255,7 @@ function App() {
               </h2>
 
               <p className="text-gray-300 whitespace-pre-wrap">
-                {resumeText.slice(0, 2000)}
+                {result.resumeText.slice(0, 2000)}
               </p>
             </div>
 
