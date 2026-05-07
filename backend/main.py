@@ -1,15 +1,17 @@
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
-from openai import OpenAI
 import pdfplumber
 import os
+from groq import Groq
 
 app = FastAPI()
 
-client = OpenAI(
-    api_key=os.getenv("OPENAI_API_KEY")
-)
-# CORS
+# ✅ Groq client (use environment variable for security)
+client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+
+# =========================
+# CORS CONFIG
+# =========================
 app.add_middleware(
     CORSMiddleware,
     allow_origins=[
@@ -21,12 +23,28 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# =========================
+# HOME ROUTE
+# =========================
 @app.get("/")
 def home():
-    return {
-        "message": "Backend is running"
-    }
+    return {"message": "Backend is running"}
 
+# =========================
+# AI FUNCTION (GROQ)
+# =========================
+def get_ai_response(prompt: str):
+    response = client.chat.completions.create(
+        model="llama-3.1-70b-versatile",
+        messages=[
+            {"role": "user", "content": prompt}
+        ]
+    )
+    return response.choices[0].message.content
+
+# =========================
+# MAIN UPLOAD ENDPOINT
+# =========================
 @app.post("/upload-resume/")
 async def upload_resume(
     file: UploadFile = File(...),
@@ -35,135 +53,109 @@ async def upload_resume(
 
     text = ""
 
-    # Extract PDF text
+    # =========================
+    # PDF TEXT EXTRACTION
+    # =========================
     with pdfplumber.open(file.file) as pdf:
-
         for page in pdf.pages:
-
             extracted = page.extract_text()
-
             if extracted:
-                text += extracted
+                text += extracted + "\n"
 
     lower_text = text.lower()
     job_desc_lower = job_description.lower()
 
-    # Skills Database
+    # =========================
+    # SKILLS DATABASE
+    # =========================
     skills_db = [
-        "python",
-        "react",
-        "sql",
-        "machine learning",
-        "tensorflow",
-        "pytorch",
-        "fastapi",
-        "docker",
-        "aws",
-        "opencv",
-        "flask",
-        "django",
-        "linux",
-        "numpy",
-        "pandas",
-        "scikit learn"
+        "python", "react", "sql", "machine learning",
+        "tensorflow", "pytorch", "fastapi", "docker",
+        "aws", "opencv", "flask", "django", "linux",
+        "numpy", "pandas", "scikit learn"
     ]
 
-    detected_skills = []
+    # =========================
+    # DETECTED SKILLS
+    # =========================
+    detected_skills = [
+        skill for skill in skills_db if skill in lower_text
+    ]
 
-    for skill in skills_db:
+    # =========================
+    # ATS SCORE
+    # =========================
+    ats_score = min(len(detected_skills) * 10, 100)
 
-        if skill in lower_text:
-            detected_skills.append(skill)
+    # =========================
+    # MISSING SKILLS
+    # =========================
+    missing_skills = [
+        skill for skill in skills_db if skill not in detected_skills
+    ]
 
-    ats_score = len(detected_skills) * 10
+    # =========================
+    # MATCHED SKILLS (JOB DESC)
+    # =========================
+    matched_skills = [
+        skill for skill in detected_skills if skill in job_desc_lower
+    ]
 
-    if ats_score > 100:
-        ats_score = 100
+    # =========================
+    # SUGGESTIONS
+    # =========================
+    suggestions = [
+        f"Consider adding '{skill}' to your resume."
+        for skill in missing_skills
+    ]
 
-    missing_skills = []
+    # =========================
+    # MATCH SCORE
+    # =========================
+    match_score = int(
+        (len(matched_skills) / len(skills_db)) * 100
+    ) if len(skills_db) > 0 else 0
 
-    for skill in skills_db:
-
-        if skill not in detected_skills:
-            missing_skills.append(skill)
-
-    matched_skills = []
-
-    for skill in detected_skills:
-
-        if skill in job_desc_lower:
-            matched_skills.append(skill)
-
-    suggestions = []
-
-    for skill in missing_skills:
-
-        suggestions.append(
-            f"Consider adding '{skill}' to your resume."
-        )
-
-    if len(skills_db) > 0:
-
-        match_score = int(
-            (len(matched_skills) / len(skills_db)) * 100
-        )
-
-    else:
-
-        match_score = 0
-
-    # OpenAI Feedback
+    # =========================
+    # GROQ AI PROMPT
+    # =========================
     prompt = f"""
-    You are an ATS Resume Expert.
+You are an ATS Resume Expert.
 
-    Analyze this resume based on the job description.
+Analyze the resume against the job description.
 
-    Resume:
-    {text}
+Return:
+1. Resume strengths
+2. Missing skills
+3. ATS optimization tips
+4. Resume improvement suggestions
+5. Final hiring chance (percentage)
 
-    Job Description:
-    {job_description}
+Resume:
+{text}
 
-    Give:
-    1. Resume strengths
-    2. Missing skills
-    3. ATS optimization tips
-    4. Resume improvement suggestions
-    5. Final hiring chance
+Job Description:
+{job_description}
 
-    Keep it short and professional.
-    """
+Keep it short, clear, and professional.
+"""
 
-    ai_response = client.chat.completions.create(
-        model="gpt-4.1-mini",
-        messages=[
-            {
-                "role": "user",
-                "content": prompt
-            }
-        ]
-    )
+    # =========================
+    # AI RESPONSE (GROQ)
+    # =========================
+    ai_feedback = get_ai_response(prompt)
 
-    ai_feedback = ai_response.choices[0].message.content
-
+    # =========================
+    # RESPONSE
+    # =========================
     return {
-
         "filename": file.filename,
-
         "resume_text": text,
-
         "skills": detected_skills,
-
         "missing_skills": missing_skills,
-
         "ats_score": ats_score,
-
         "match_score": match_score,
-
         "matched_skills": matched_skills,
-
         "suggestions": suggestions,
-
         "ai_feedback": ai_feedback
-
     }
