@@ -6,8 +6,15 @@ from groq import Groq
 
 app = FastAPI()
 
-# ✅ Groq client (use environment variable for security)
-client = Groq(api_key=os.getenv("GROQ_API_KEY"))
+# =========================
+# ENV SAFETY CHECK
+# =========================
+api_key = os.getenv("GROQ_API_KEY")
+
+if not api_key:
+    raise Exception("❌ GROQ_API_KEY not set in environment variables")
+
+client = Groq(api_key=api_key)
 
 # =========================
 # CORS CONFIG
@@ -31,19 +38,24 @@ def home():
     return {"message": "Backend is running"}
 
 # =========================
-# AI FUNCTION (GROQ)
+# GROQ AI FUNCTION
 # =========================
 def get_ai_response(prompt: str):
-    response = client.chat.completions.create(
-        model="llama-3.1-8b-instant",
-        messages=[
-            {"role": "user", "content": prompt}
-        ]
-    )
-    return response.choices[0].message.content
+    try:
+        response = client.chat.completions.create(
+            model="llama-3.1-8b-instant",
+            messages=[
+                {"role": "user", "content": prompt}
+            ]
+        )
+        return response.choices[0].message.content
+
+    except Exception as e:
+        print("❌ GROQ ERROR:", e)
+        return "AI service temporarily unavailable. Please try again."
 
 # =========================
-# MAIN UPLOAD ENDPOINT
+# MAIN ENDPOINT
 # =========================
 @app.post("/upload-resume/")
 async def upload_resume(
@@ -54,7 +66,7 @@ async def upload_resume(
     text = ""
 
     # =========================
-    # PDF TEXT EXTRACTION
+    # PDF EXTRACTION
     # =========================
     with pdfplumber.open(file.file) as pdf:
         for page in pdf.pages:
@@ -62,11 +74,17 @@ async def upload_resume(
             if extracted:
                 text += extracted + "\n"
 
+    # =========================
+    # LIMIT TEXT (IMPORTANT FOR SPEED)
+    # =========================
+    text = text[:4000]
+    job_description = job_description[:2000]
+
     lower_text = text.lower()
     job_desc_lower = job_description.lower()
 
     # =========================
-    # SKILLS DATABASE
+    # SKILLS DB
     # =========================
     skills_db = [
         "python", "react", "sql", "machine learning",
@@ -95,7 +113,7 @@ async def upload_resume(
     ]
 
     # =========================
-    # MATCHED SKILLS (JOB DESC)
+    # MATCHED SKILLS
     # =========================
     matched_skills = [
         skill for skill in detected_skills if skill in job_desc_lower
@@ -114,22 +132,22 @@ async def upload_resume(
     # =========================
     match_score = int(
         (len(matched_skills) / len(skills_db)) * 100
-    ) if len(skills_db) > 0 else 0
+    ) if skills_db else 0
 
     # =========================
-    # GROQ AI PROMPT
+    # AI PROMPT
     # =========================
     prompt = f"""
 You are an ATS Resume Expert.
 
-Analyze the resume against the job description.
+Analyze the resume vs job description.
 
-Return:
+Give:
 1. Resume strengths
 2. Missing skills
 3. ATS optimization tips
-4. Resume improvement suggestions
-5. Final hiring chance (percentage)
+4. Improvement suggestions
+5. Hiring chance (percentage)
 
 Resume:
 {text}
@@ -137,11 +155,11 @@ Resume:
 Job Description:
 {job_description}
 
-Keep it short, clear, and professional.
+Be concise and professional.
 """
 
     # =========================
-    # AI RESPONSE (GROQ)
+    # AI RESPONSE
     # =========================
     ai_feedback = get_ai_response(prompt)
 
