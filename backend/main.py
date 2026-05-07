@@ -1,18 +1,22 @@
-from openai import OpenAI
-import os
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
+from openai import OpenAI
 import pdfplumber
+import os
 
 app = FastAPI()
+
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
 )
 
-# CORS Configuration
+# CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],
+    allow_origins=[
+        "http://localhost:5173",
+        "https://ai-resume-analyzer.vercel.app"
+    ],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -24,7 +28,6 @@ def home():
         "message": "Backend is running"
     }
 
-
 @app.post("/upload-resume/")
 async def upload_resume(
     file: UploadFile = File(...),
@@ -33,7 +36,7 @@ async def upload_resume(
 
     text = ""
 
-    # Extract text from PDF
+    # Extract PDF text
     with pdfplumber.open(file.file) as pdf:
 
         for page in pdf.pages:
@@ -43,40 +46,8 @@ async def upload_resume(
             if extracted:
                 text += extracted
 
-    # Convert to lowercase
     lower_text = text.lower()
     job_desc_lower = job_description.lower()
-    ai_response = client.chat.completions.create(
-    model="gpt-4.1-mini",
-    messages=[
-        {
-            "role": "system",
-            "content": "You are a professional ATS resume analyzer."
-        },
-        {
-            "role": "user",
-            "content": f"""
-            Analyze this resume.
-
-            Resume:
-            {text}
-
-            Job Description:
-            {job_description}
-
-            Provide:
-            1. ATS score out of 100
-            2. Resume strengths
-            3. Weaknesses
-            4. Missing skills
-            5. Suggestions for improvement
-            6. Job match analysis
-            """
-        }
-    ]
-)
-
-ai_feedback = ai_response.choices[0].message.content
 
     # Skills Database
     skills_db = [
@@ -98,7 +69,6 @@ ai_feedback = ai_response.choices[0].message.content
         "scikit learn"
     ]
 
-    # Detect Resume Skills
     detected_skills = []
 
     for skill in skills_db:
@@ -106,13 +76,11 @@ ai_feedback = ai_response.choices[0].message.content
         if skill in lower_text:
             detected_skills.append(skill)
 
-    # ATS Score Logic
     ats_score = len(detected_skills) * 10
 
     if ats_score > 100:
         ats_score = 100
 
-    # Missing Skills
     missing_skills = []
 
     for skill in skills_db:
@@ -120,20 +88,21 @@ ai_feedback = ai_response.choices[0].message.content
         if skill not in detected_skills:
             missing_skills.append(skill)
 
-    # Job Description Matching
     matched_skills = []
-    suggestions = []
 
     for skill in detected_skills:
 
         if skill in job_desc_lower:
             matched_skills.append(skill)
-            
-    for skill in missing_skills:
-        suggestions.append(f"Consider adding '{skill}' to your resume to better match the job description.")
-        
 
-    # Match Score
+    suggestions = []
+
+    for skill in missing_skills:
+
+        suggestions.append(
+            f"Consider adding '{skill}' to your resume."
+        )
+
     if len(skills_db) > 0:
 
         match_score = int(
@@ -141,9 +110,43 @@ ai_feedback = ai_response.choices[0].message.content
         )
 
     else:
+
         match_score = 0
 
-    # Final Response
+    # OpenAI Feedback
+    prompt = f"""
+    You are an ATS Resume Expert.
+
+    Analyze this resume based on the job description.
+
+    Resume:
+    {text}
+
+    Job Description:
+    {job_description}
+
+    Give:
+    1. Resume strengths
+    2. Missing skills
+    3. ATS optimization tips
+    4. Resume improvement suggestions
+    5. Final hiring chance
+
+    Keep it short and professional.
+    """
+
+    ai_response = client.chat.completions.create(
+        model="gpt-4.1-mini",
+        messages=[
+            {
+                "role": "user",
+                "content": prompt
+            }
+        ]
+    )
+
+    ai_feedback = ai_response.choices[0].message.content
+
     return {
 
         "filename": file.filename,
@@ -159,9 +162,9 @@ ai_feedback = ai_response.choices[0].message.content
         "match_score": match_score,
 
         "matched_skills": matched_skills,
-        
-        "suggestions": suggestions
 
-        "ai_feedback" : ai_feedback
+        "suggestions": suggestions,
+
+        "ai_feedback": ai_feedback
 
     }
