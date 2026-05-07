@@ -8,7 +8,7 @@ app = FastAPI()
 
 client = OpenAI(
     api_key=os.getenv("OPENAI_API_KEY")
-
+)
 # CORS
 app.add_middleware(
     CORSMiddleware,
