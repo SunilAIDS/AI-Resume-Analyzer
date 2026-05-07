@@ -28,7 +28,7 @@ function App() {
   // FILE HANDLER
   // =========================
   const handleFile = (e) => {
-    const selected = e.target.files[0]
+    const selected = e.target.files?.[0]
     if (selected) {
       setFile(selected)
       setFileName(selected.name)
@@ -41,7 +41,7 @@ function App() {
   const analyzeResume = async () => {
 
     if (!file) {
-      alert("Please upload a PDF file")
+      alert("Please upload a PDF resume")
       return
     }
 
@@ -54,7 +54,7 @@ function App() {
       formData.append("file", file)
       formData.append("job_description", jobDesc)
 
-      setStatusMsg("Analyzing resume with AI...")
+      setStatusMsg("Analyzing with AI...")
 
       const response = await axios.post(
         "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
@@ -68,21 +68,46 @@ function App() {
       )
 
       console.log("STATUS:", response.status)
-      console.log("DATA:", response.data)
+      console.log("RAW DATA:", response.data)
 
-      const data = response.data || {}
+      // =========================
+      // SAFE PARSE (IMPORTANT FIX)
+      // =========================
+      let data = response.data
+
+      if (typeof data === "string") {
+        try {
+          data = JSON.parse(data)
+        } catch (e) {
+          setStatusMsg("Invalid backend response")
+          alert("Backend did not return valid JSON")
+          return
+        }
+      }
+
+      // =========================
+      // EMPTY RESPONSE CHECK
+      // =========================
+      if (!data || Object.keys(data).length === 0) {
+        setStatusMsg("Empty response")
+        alert("Backend returned empty response")
+        return
+      }
 
       if (response.status !== 200 || data.error) {
-        setStatusMsg("Error from backend")
+        setStatusMsg("Backend error")
         alert(data.error || "Backend error")
         return
       }
 
+      // =========================
+      // UPDATE STATE
+      // =========================
       setResult({
         resumeText: data.resume_text || "",
         skills: data.skills || [],
         atsScore: data.ats_score || 0,
-        matchScore: data.match_score || 0,
+        matchScore: data.match_score ?? data.matchScore ?? 0,
         matchedSkills: data.matched_skills || [],
         suggestions: data.suggestions || [],
         aiFeedback: data.ai_feedback || ""
@@ -93,13 +118,13 @@ function App() {
 
     } catch (error) {
 
-      console.log(error)
+      console.log("ERROR:", error)
       setStatusMsg("Request failed")
 
       if (error.response) {
         alert("Backend Error: " + error.response.status)
       } else if (error.request) {
-        alert("No response from backend")
+        alert("No response from backend (network issue)")
       } else {
         alert(error.message)
       }
@@ -126,7 +151,7 @@ function App() {
           Upload resume and get ATS analysis
         </p>
 
-        {/* INPUT SECTION */}
+        {/* INPUT */}
         <div className="bg-gray-900 p-8 rounded-2xl mt-10">
 
           <input
@@ -185,21 +210,20 @@ function App() {
               Match Score: {result.matchScore}%
             </div>
 
-            {/* SKILLS */}
             <div className="bg-gray-900 p-5 rounded">
               <h2>Skills</h2>
-              {result.skills.length > 0 ? result.skills.join(", ") : "No skills detected"}
+              {result.skills.length
+                ? result.skills.join(", ")
+                : "No skills detected"}
             </div>
 
-            {/* MATCHED SKILLS */}
             <div className="bg-gray-900 p-5 rounded">
               <h2>Matched Skills</h2>
-              {result.matchedSkills.length > 0
+              {result.matchedSkills.length
                 ? result.matchedSkills.join(", ")
                 : "No matched skills"}
             </div>
 
-            {/* AI FEEDBACK */}
             <div className="bg-gray-900 p-5 rounded md:col-span-2">
               <h2 className="text-xl font-bold mb-2">
                 AI Feedback
@@ -209,7 +233,6 @@ function App() {
               </pre>
             </div>
 
-            {/* RESUME TEXT */}
             <div className="bg-gray-900 p-5 rounded md:col-span-2">
               <h2 className="text-xl font-bold mb-2">
                 Extracted Resume Text
