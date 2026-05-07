@@ -38,22 +38,42 @@ function App() {
 
     }
 
-    setLoading(true)
-
-    const fileInput = document.querySelector('input[type="file"]')
-    const file = fileInput.files[0]
-
-    const formData = new FormData()
-
-    formData.append("file", file)
-    formData.append("job_description", jobDesc)
-
     try {
 
+      setLoading(true)
+
+      const fileInput = document.querySelector('input[type="file"]')
+
+      if (!fileInput.files[0]) {
+
+        alert("No file selected")
+        setLoading(false)
+
+        return
+
+      }
+
+      const file = fileInput.files[0]
+
+      const formData = new FormData()
+
+      formData.append("file", file)
+      formData.append("job_description", jobDesc)
+
+      console.log("Sending request...")
+
       const response = await axios.post(
-        "http://127.0.0.1:8000/upload-resume/",
-        formData
+        "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
+        formData,
+        {
+          headers: {
+            "Content-Type": "multipart/form-data",
+          },
+          timeout: 60000,
+        }
       )
+
+      console.log(response.data)
 
       setResumeText(response.data.resume_text)
 
@@ -67,20 +87,43 @@ function App() {
 
       setSuggestions(response.data.suggestions)
 
-      setTimeout(() => {
-
-        setLoading(false)
-        setShowResult(true)
-
-      }, 2000)
+      setShowResult(true)
 
     }
 
     catch (error) {
 
+      console.log("FULL ERROR:")
       console.log(error)
 
-      alert("Upload failed")
+      if (error.response) {
+
+        console.log(error.response.data)
+        console.log(error.response.status)
+
+        alert("Backend Error: " + error.response.status)
+
+      }
+
+      else if (error.request) {
+
+        console.log(error.request)
+
+        alert("No response from backend")
+
+      }
+
+      else {
+
+        console.log(error.message)
+
+        alert(error.message)
+
+      }
+
+    }
+
+    finally {
 
       setLoading(false)
 
@@ -132,9 +175,7 @@ function App() {
           />
 
           <button
-
             onClick={analyzeResume}
-
             className="mt-6 bg-blue-600 hover:bg-blue-700 px-6 py-3 rounded-xl font-semibold"
           >
 
