@@ -7,15 +7,10 @@ from groq import Groq
 app = FastAPI()
 
 # =========================
-# GROQ SETUP (SAFE)
+# GROQ SETUP SAFE
 # =========================
 api_key = os.getenv("GROQ_API_KEY")
-
-if not api_key:
-    print("❌ WARNING: GROQ_API_KEY not found")
-    api_key = "dummy_key"
-
-client = Groq(api_key=api_key)
+client = Groq(api_key=api_key) if api_key else None
 
 # =========================
 # CORS
@@ -31,32 +26,31 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-# =========================
-# HEALTH CHECK
-# =========================
 @app.get("/")
 def home():
-    return {"message": "Backend is running"}
+    return {"status": "ok"}
 
 # =========================
-# GROQ FUNCTION (SAFE)
+# SAFE AI FUNCTION
 # =========================
 def get_ai_response(prompt: str):
+    if not client:
+        return "AI not configured (missing API key)"
+
     try:
-        response = client.chat.completions.create(
+        res = client.chat.completions.create(
             model="llama-3.1-8b-instant",
-            messages=[
-                {"role": "user", "content": prompt}
-            ]
+            messages=[{"role": "user", "content": prompt}],
+            temperature=0.3
         )
-        return response.choices[0].message.content
+        return res.choices[0].message.content
 
     except Exception as e:
-        print("❌ GROQ ERROR:", e)
-        return "AI service temporarily unavailable."
+        print("AI ERROR:", e)
+        return "AI temporarily unavailable"
 
 # =========================
-# MAIN API
+# MAIN ENDPOINT (ROBUST)
 # =========================
 @app.post("/upload-resume/")
 async def upload_resume(
@@ -67,89 +61,53 @@ async def upload_resume(
     try:
         text = ""
 
-        # =========================
-        # PDF EXTRACTION
-        # =========================
         with pdfplumber.open(file.file) as pdf:
             for page in pdf.pages:
-                extracted = page.extract_text()
-                if extracted:
-                    text += extracted + "\n"
+                t = page.extract_text()
+                if t:
+                    text += t + "\n"
 
-        # LIMIT SIZE (IMPORTANT)
         text = text[:4000]
-        job_description = job_description[:2000]
 
-        lower_text = text.lower()
-        job_desc_lower = job_description.lower()
-
-        # =========================
-        # SKILLS
-        # =========================
         skills_db = [
-            "python", "react", "sql", "machine learning",
-            "tensorflow", "pytorch", "fastapi", "docker",
-            "aws", "opencv", "flask", "django", "linux",
-            "numpy", "pandas", "scikit learn"
+            "python","react","sql","fastapi","docker",
+            "aws","linux","tensorflow","pytorch",
+            "opencv","flask","django","pandas","numpy"
         ]
 
-        detected_skills = [s for s in skills_db if s in lower_text]
-        missing_skills = [s for s in skills_db if s not in detected_skills]
-        matched_skills = [s for s in detected_skills if s in job_desc_lower]
+        lower = text.lower()
 
-        ats_score = min(len(detected_skills) * 10, 100)
+        detected = [s for s in skills_db if s in lower]
 
-        match_score = int(
-            (len(matched_skills) / len(skills_db)) * 100
-        ) if skills_db else 0
+        ats = min(len(detected) * 12, 100)
 
-        suggestions = [
-            f"Consider adding '{s}' to your resume."
-            for s in missing_skills
-        ]
-
-        # =========================
-        # AI PROMPT
-        # =========================
         prompt = f"""
-You are an ATS Resume Expert.
-
-Analyze resume vs job description.
-
-Return:
-- Strengths
-- Missing skills
-- ATS optimization tips
-- Improvements
-- Hiring chance %
+Analyze resume for ATS.
 
 Resume:
 {text}
 
-Job Description:
+Job:
 {job_description}
+
+Return short feedback.
 """
 
         ai_feedback = get_ai_response(prompt)
 
-        # =========================
-        # RESPONSE
-        # =========================
         return {
-            "filename": file.filename,
             "resume_text": text,
-            "skills": detected_skills,
-            "missing_skills": missing_skills,
-            "ats_score": ats_score,
-            "match_score": match_score,
-            "matched_skills": matched_skills,
-            "suggestions": suggestions,
+            "skills": detected,
+            "ats_score": ats,
+            "match_score": ats,
+            "matched_skills": detected,
+            "suggestions": [],
             "ai_feedback": ai_feedback
         }
 
     except Exception as e:
-        print("❌ ENDPOINT ERROR:", e)
+        print("BACKEND ERROR:", e)
         return {
-            "error": "Failed to process resume",
+            "error": "Backend failed but server is alive",
             "details": str(e)
         }
