@@ -1,4 +1,4 @@
-from openai iport OpenAI
+from openai import OpenAI
 import os
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
