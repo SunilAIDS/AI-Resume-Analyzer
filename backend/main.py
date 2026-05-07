@@ -1,8 +1,13 @@
+from openai iport OpenAI
+import os
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
 
 app = FastAPI()
+client = OpenAI(
+    api_key=os.getenv("OPENAI_API_KEY")
+)
 
 # CORS Configuration
 app.add_middleware(
@@ -41,6 +46,37 @@ async def upload_resume(
     # Convert to lowercase
     lower_text = text.lower()
     job_desc_lower = job_description.lower()
+    ai_response = client.chat.completions.create(
+    model="gpt-4.1-mini",
+    messages=[
+        {
+            "role": "system",
+            "content": "You are a professional ATS resume analyzer."
+        },
+        {
+            "role": "user",
+            "content": f"""
+            Analyze this resume.
+
+            Resume:
+            {text}
+
+            Job Description:
+            {job_description}
+
+            Provide:
+            1. ATS score out of 100
+            2. Resume strengths
+            3. Weaknesses
+            4. Missing skills
+            5. Suggestions for improvement
+            6. Job match analysis
+            """
+        }
+    ]
+)
+
+ai_feedback = ai_response.choices[0].message.content
 
     # Skills Database
     skills_db = [
@@ -125,5 +161,7 @@ async def upload_resume(
         "matched_skills": matched_skills,
         
         "suggestions": suggestions
+
+        "ai_feedback" : ai_feedback
 
     }
