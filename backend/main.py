@@ -58,7 +58,7 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
         # 2. SELECT MODEL (Waterfall Strategy)
         selected_model = None
         # Try 2.5-flash (2026 model) then fall back to 1.5 series
-        model_options = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro']
+        model_options = ['gemini-2.5-flash', 'gemini-2.0-flash', 'gemini-1.5-flash-latest']
         
         for m_name in model_options:
             try:
@@ -69,9 +69,11 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
                 print(f"Model connected: {m_name}")
                 break
             except Exception as e:
-                print(f"Attempt for {m_name} failed: {str(e)}")
+                # If it's a 429, we know the model EXISTS, but we are just blocked
+                if "429" in str(e):
+                    print(f"Model {m_name} exists but quota is full.")
                 continue
-
+                
         if not selected_model:
             raise Exception("All Gemini models returned 404 or were unavailable.")
 
@@ -110,11 +112,16 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
         print(f"FINAL BACKEND ERROR: {error_msg}")
 
         if "429" in error_msg:
-            friendly_error = "Server Is Busy (Rate Limit). Please Wait For An Minute Before Trying Again."
+            if "quota" in error_msg.lower() and "day" in error_msg.lower():
+                friendly_error = "Daily limit reached. The free-tier API will reset in 24 hours."
+            else:
+                friendly_error = "Server is busy due to high traffic. Please wait 60 seconds and try again."
         elif "404" in error_msg:
-            friendly_error = "AI Model Not Found. Check API Configuration"
+           friendly_error = "The AI engine is currently undergoing maintenance or is unavailable."
+        elif "500" in error_msg or "503" in error_msg:
+            friendly_error = "Google's AI servers are temporarily down. Please try again later."
         else:
-            friendly_error = f"System Alert: {error_msg}"
+            friendly_error = "An unexpected system alert occurred. Please refresh and try again."
             
         return {
             "error": error_msg,
