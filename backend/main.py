@@ -106,11 +106,21 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
             raise Exception("AI output format error.")
 
     except Exception as e:
-        print(f"FINAL BACKEND ERROR: {str(e)}")
+        error_msg = str(e)
+        print(f"FINAL BACKEND ERROR: {error_msg}")
+
+        if "429" in error_msg:
+            friendly_error = "Server Is Busy (Rate Limit). Please Wait For An Minute Before Trying Again."
+        elif "404" in error_msg:
+            friendly_error = "AI Model Not Found. Check API Configuration"
+        else:
+            friendly_error = f"System Alert: {error_msg}"
+            
         return {
-            "error": str(e),
+            "error": error_msg,
             "ats_score": 0,
-            "overall_verdict": f"System Alert: {str(e)}"
+            "match_percentage" : 0,
+            "overall_verdict" : friendly_error
         }
 
 if __name__ == "__main__":
