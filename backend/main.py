@@ -8,26 +8,22 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
+# Force the SDK to ignore potential environment conflicts
+os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
+
 load_dotenv()
 
-# 1. Setup Gemini with strict JSON configuration
+# Configure API Key
 api_key = os.getenv("GEMINI_API_KEY")
-
-# LOGGING: Vital for Render troubleshooting
-if not api_key:
-    print("CRITICAL: GEMINI_API_KEY is missing from environment!")
+if api_key:
+    genai.configure(api_key=api_key)
+    print(f"Server initialized with API Key: {api_key[:5]}...")
 else:
-    print(f"API Key detected (starts with: {api_key[:5]}...)")
-
-genai.configure(api_key=api_key)
-
-model = genai.GenerativeModel(
-    model_name='models/gemini-1.5-flash',
-    generation_config={"response_mime_type": "application/json"}
-)
+    print("CRITICAL ERROR: GEMINI_API_KEY is not set in environment variables.")
 
 app = FastAPI()
 
+# Robust CORS for Vercel and Local testing
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -37,39 +33,53 @@ app.add_middleware(
 )
 
 @app.get("/")
-def health_check():
-    return {"status": "online", "message": "Resume API is running"}
+def health():
+    return {"status": "online", "active_model": "Checking..."}
 
 @app.post("/upload-resume/")
 async def upload_resume(file: UploadFile = File(...), job_description: str = Form("")):
     try:
-        print(f"--- NEW REQUEST RECEIVED: {file.filename} ---")
+        print(f"--- Processing Request: {file.filename} ---")
         
-        # --- 1. PDF EXTRACTION ---
+        # 1. READ PDF CONTENT
         resume_text = ""
         content = await file.read()
-        
         with pdfplumber.open(io.BytesIO(content)) as pdf:
-            print(f"Processing {len(pdf.pages)} pages...")
             for page in pdf.pages:
-                text = page.extract_text()
-                if text:
-                    resume_text += text + "\n"
-
-        print(f"Extracted {len(resume_text)} characters from resume.")
+                page_text = page.extract_text()
+                if page_text:
+                    resume_text += page_text + "\n"
 
         if not resume_text.strip():
-            print("ERROR: PDF extraction returned no text.")
-            return {"error": "Could not read PDF. Ensure it is not a scanned image.", "ats_score": 0}
+            return {"error": "PDF is unreadable. Please upload a text-based PDF.", "ats_score": 0}
 
-        # --- 2. THE PROMPT ---
+        # 2. SELECT MODEL (Waterfall Strategy to avoid 404)
+        selected_model = None
+        # List of models to try in order of preference
+        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        
+        for m_name in model_names:
+            try:
+                # We initialize inside the call to ensure the most stable connection
+                test_model = genai.GenerativeModel(model_name=m_name)
+                selected_model = test_model
+                print(f"Using Model: {m_name}")
+                break
+            except Exception:
+                continue
+
+        if not selected_model:
+            raise Exception("No compatible Gemini models found on your API track.")
+
+        # 3. CONSTRUCT PROMPT
         prompt = f"""
-        Act as a professional ATS. Analyze this Resume vs the Job Description.
+        Analyze this Resume against the Job Description. 
+        Return ONLY a JSON object.
         
         JD: {job_description}
         RESUME: {resume_text}
-        
-        Return JSON ONLY:
+
+        JSON Structure:
         {{
             "ats_score": number,
             "match_percentage": number,
@@ -80,38 +90,9 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
         }}
         """
 
-        # --- 3. AI GENERATION ---
-        print("Sending request to Gemini...")
-        response = model.generate_content(prompt)
-        print("AI Response received.")
+        # 4. GENERATE CONTENT
+        # We don't use response_mime_type here to ensure compatibility with older API versions
+        response = selected_model.generate_content(prompt)
         
-        # --- 4. SECURE PARSING ---
-        try:
-            # First try direct text
-            result = json.loads(response.text)
-            print("Successfully parsed JSON response.")
-            return result
-        except Exception:
-            # Fallback for Markdown formatting
-            print("Standard JSON parse failed, attempting regex cleanup...")
-            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            
-            print(f"FAILED AI TEXT: {response.text}")
-            raise Exception("AI response format was invalid.")
-
-    except Exception as e:
-        print(f"BACKEND ERROR: {str(e)}")
-        # We send the error back in the verdict so you can see it on the website
-        return {
-            "error": str(e), 
-            "ats_score": 0, 
-            "match_percentage": 0,
-            "overall_verdict": f"Server Error: {str(e)}"
-        }
-
-if __name__ == "__main__":
-    import uvicorn
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(app, host="0.0.0.0", port=port)
+        # 5. ROBUST JSON PARSING
+        # This finds the JSON even if the AI wraps it in ```json ...
