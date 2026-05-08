@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 
-const API_URL = "http://localhost:8000/upload-resume/"; // Change to your Render URL later
+const API_URL = "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/";
 
 function App() {
   const [file, setFile] = useState(null);
