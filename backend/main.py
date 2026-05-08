@@ -1,134 +1,78 @@
+import re
 from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 import pdfplumber
-import os
-from groq import Groq
 
 app = FastAPI()
 
-# =========================
-# CORS
-# =========================
+# Updated CORS for production/development flexibility
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:5173",
-        "https://ai-resume-analyzer.vercel.app"
-    ],
+    allow_origins=["*"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
 
+# Robust skill list
+SKILLS_DB = [
+    "python", "react", "sql", "machine learning", "tensorflow", "pytorch",
+    "fastapi", "docker", "aws", "opencv", "flask", "django", "linux",
+    "numpy", "pandas", "scikit learn", "javascript", "typescript", "mongodb"
+]
+
 @app.get("/")
 def home():
-    return {"status": "ok"}
+    return {"status": "online", "message": "AI Resume Analyzer API"}
 
-# =========================
-# GROQ INIT (SAFE LAZY LOAD)
-# =========================
-def get_client():
-    api_key = os.getenv("GROQ_API_KEY")
-    if not api_key:
-        return None
-    return Groq(api_key=api_key)
-
-# =========================
-# AI FUNCTION (SAFE + FAST FAIL)
-# =========================
-def get_ai_response(prompt: str):
-    client = get_client()
-
-    if not client:
-        return "AI not configured"
-
-    try:
-        response = client.chat.completions.create(
-            model="llama-3.1-8b-instant",
-            messages=[{"role": "user", "content": prompt}],
-            temperature=0.3
-        )
-        return response.choices[0].message.content
-
-    except Exception as e:
-        print("AI ERROR:", e)
-        return "AI temporarily unavailable"
-
-# =========================
-# MAIN API
-# =========================
 @app.post("/upload-resume/")
 async def upload_resume(
     file: UploadFile = File(...),
     job_description: str = Form("")
 ):
-
+    text = ""
     try:
-        text = ""
-
-        # =========================
-        # SAFE PDF READ
-        # =========================
-        try:
-            with pdfplumber.open(file.file) as pdf:
-                for page in pdf.pages:
-                    t = page.extract_text()
-                    if t:
-                        text += t + "\n"
-        except Exception:
-            return {"error": "Invalid or unreadable PDF"}
-
-        text = text[:3500]
-
-        # =========================
-        # SKILLS
-        # =========================
-        skills_db = [
-            "python","react","sql","fastapi","docker",
-            "aws","linux","tensorflow","pytorch",
-            "opencv","flask","django","pandas","numpy"
-        ]
-
-        lower = text.lower()
-        detected = [s for s in skills_db if s in lower]
-
-        ats = min(len(detected) * 10, 100)
-
-        # =========================
-        # SAFE AI PROMPT
-        # =========================
-        prompt = f"""
-You are an ATS expert.
-
-Resume:
-{text[:2000]}
-
-Job:
-{job_description}
-
-Give short feedback only.
-"""
-
-        ai_feedback = get_ai_response(prompt)
-
-        # =========================
-        # ALWAYS RETURN RESPONSE
-        # =========================
-        return {
-            "resume_text": text,
-            "skills": detected,
-            "ats_score": ats,
-            "match_score": ats,
-            "matched_skills": detected,
-            "suggestions": [],
-            "ai_feedback": ai_feedback
-        }
-
+        with pdfplumber.open(file.file) as pdf:
+            for page in pdf.pages:
+                extracted = page.extract_text()
+                if extracted:
+                    text += extracted
     except Exception as e:
-        print("BACKEND CRASH:", e)
+        return {"error": f"Failed to parse PDF: {str(e)}"}
 
-        # NEVER FAIL SILENTLY
-        return {
-            "error": "Backend error but server alive",
-            "details": str(e)
-        }
+    lower_text = text.lower()
+    job_desc_lower = job_description.lower()
+
+    # Use Regex with word boundaries (\b) for precise matching
+    detected_skills = [s for s in SKILLS_DB if re.search(rf"\b{s}\b", lower_text)]
+    
+    # Identify skills specifically requested in the Job Description
+    required_skills = [s for s in SKILLS_DB if re.search(rf"\b{s}\b", job_desc_lower)]
+
+    # Matching Logic
+    # 1. Matched: Skills in both Resume AND JD
+    matched_skills = [s for s in detected_skills if s in required_skills]
+    
+    # 2. Missing: Skills in JD but NOT in Resume
+    missing_skills = [s for s in required_skills if s not in detected_skills]
+
+    # ATS Score: General profile strength based on skill count
+    ats_score = min(len(detected_skills) * 10, 100)
+
+    # Match Score: Percentage of JD skills covered by user
+    match_score = int((len(matched_skills) / len(required_skills) * 100)) if required_skills else 0
+
+    suggestions = [
+        f"The job requires '{s.upper()}', but it wasn't found in your resume." 
+        for s in missing_skills
+    ]
+
+    return {
+        "filename": file.filename,
+        "resume_text": text[:1500], # Preview of extracted text
+        "skills": detected_skills,
+        "ats_score": ats_score,
+        "match_score": match_score,
+        "matched_skills": matched_skills,
+        "suggestions": suggestions
+    }
