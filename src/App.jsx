@@ -1,107 +1,47 @@
-import axios from "axios"
-import { useState } from "react"
-
-function App() {
-
-  const [file, setFile] = useState(null)
-  const [fileName, setFileName] = useState("")
-  const [jobDesc, setJobDesc] = useState("")
-  const [loading, setLoading] = useState(false)
-  const [status, setStatus] = useState("")
-  const [result, setResult] = useState(null)
-
-  const handleFile = (e) => {
-    const f = e.target.files[0]
-    if (f) {
-      setFile(f)
-      setFileName(f.name)
-    }
+const analyze = async () => {
+  if (!file) {
+    alert("Upload PDF first")
+    return
   }
 
-  const analyze = async () => {
+  try {
+    setLoading(true)
+    setStatus("Connecting backend... (may take 30s on first load)")
 
-    if (!file) {
-      alert("Upload PDF first")
-      return
+    const form = new FormData()
+    form.append("file", file)
+    form.append("job_description", jobDesc)
+
+    const res = await axios.post(
+      "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
+      form,
+      {
+        timeout: 180000 // IMPORTANT (Render safe)
+      }
+    )
+
+    console.log("STATUS:", res.status)
+    console.log("DATA:", res.data)
+
+    setStatus("Response received")
+
+    setResult(res.data)
+
+  } catch (err) {
+
+    console.log("ERROR:", err)
+
+    if (err.code === "ECONNABORTED") {
+      setStatus("Server is waking up (Render cold start). Wait and retry.")
+    } 
+    else if (err.message.includes("Network Error")) {
+      setStatus("Backend is sleeping or not reachable")
+    } 
+    else {
+      setStatus("Request failed")
     }
 
-    try {
-      setLoading(true)
-      setStatus("Connecting backend...")
-
-      const form = new FormData()
-      form.append("file", file)
-      form.append("job_description", jobDesc)
-
-      const res = await axios.post(
-        "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
-        form,
-        {
-          timeout: 180000
-        }
-      )
-
-      console.log("STATUS:", res.status)
-      console.log("DATA:", res.data)
-
-      // ❗ VALIDATION ADDED (IMPORTANT FIX)
-      if (res.status !== 200) {
-        setStatus("Server error: " + res.status)
-        return
-      }
-
-      if (res.data?.error) {
-        setStatus("Backend error: " + res.data.error)
-        return
-      }
-
-      setResult(res.data)
-      setStatus("Analysis completed")
-
-    } catch (err) {
-
-      console.log(err)
-
-      if (err.code === "ECONNABORTED") {
-        setStatus("Server is waking up (Render cold start)")
-      } else if (err.message.includes("Network Error")) {
-        setStatus("Backend not reachable")
-      } else {
-        setStatus("Request failed")
-      }
-
-    } finally {
-      setLoading(false)
-    }
+  } finally {
+    setLoading(false)
   }
-
-  return (
-    <div style={{ padding: 20 }}>
-      <h1>AI Resume Analyzer</h1>
-
-      <input type="file" onChange={handleFile} />
-
-      <textarea
-        value={jobDesc}
-        onChange={(e) => setJobDesc(e.target.value)}
-        placeholder="Job Description"
-      />
-
-      <button onClick={analyze} disabled={loading}>
-        {loading ? "Analyzing..." : "Analyze"}
-      </button>
-
-      <p>{status}</p>
-
-      {result && (
-        <div>
-          <h3>ATS: {result.ats_score}%</h3>
-          <h3>Skills: {result.skills?.join(", ")}</h3>
-          <pre>{result.ai_feedback}</pre>
-        </div>
-      )}
-    </div>
-  )
 }
-
-export default App
