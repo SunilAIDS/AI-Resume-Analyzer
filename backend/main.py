@@ -8,22 +8,21 @@ from fastapi import FastAPI, UploadFile, File, Form
 from fastapi.middleware.cors import CORSMiddleware
 from dotenv import load_dotenv
 
-# Force the SDK to ignore potential environment conflicts
+# Essential for cloud deployments like Render to avoid 404/v1beta issues
 os.environ["GOOGLE_API_USE_MTLS_ENDPOINT"] = "never"
 
 load_dotenv()
 
-# Configure API Key
+# Configure API Key with REST transport for better 2026 compatibility
 api_key = os.getenv("GEMINI_API_KEY")
 if api_key:
-    genai.configure(api_key=api_key)
-    print(f"Server initialized with API Key: {api_key[:5]}...")
+    genai.configure(api_key=api_key, transport='rest')
+    print(f"Backend ready with Key: {api_key[:5]}...")
 else:
-    print("CRITICAL ERROR: GEMINI_API_KEY is not set.")
+    print("CRITICAL: GEMINI_API_KEY is missing!")
 
 app = FastAPI()
 
-# Robust CORS for Vercel and Local testing
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -34,12 +33,12 @@ app.add_middleware(
 
 @app.get("/")
 def health():
-    return {"status": "online", "message": "Resume API is running"}
+    return {"status": "online", "engine": "Gemini 2026 API"}
 
 @app.post("/upload-resume/")
 async def upload_resume(file: UploadFile = File(...), job_description: str = Form("")):
     try:
-        print(f"--- Processing Request: {file.filename} ---")
+        print(f"--- Incoming Request: {file.filename} ---")
         
         # 1. READ PDF CONTENT
         resume_text = ""
@@ -47,78 +46,74 @@ async def upload_resume(file: UploadFile = File(...), job_description: str = For
         try:
             with pdfplumber.open(io.BytesIO(content)) as pdf:
                 for page in pdf.pages:
-                    page_text = page.extract_text()
-                    if page_text:
-                        resume_text += page_text + "\n"
-        except Exception as pdf_err:
-            print(f"PDF Error: {pdf_err}")
-            return {"error": "Failed to read PDF content.", "ats_score": 0}
+                    text = page.extract_text()
+                    if text:
+                        resume_text += text + "\n"
+        except Exception as e:
+            return {"error": f"PDF Parse Error: {str(e)}", "ats_score": 0}
 
         if not resume_text.strip():
-            return {"error": "PDF is empty or unreadable.", "ats_score": 0}
+            return {"error": "Could not extract text from PDF.", "ats_score": 0}
 
         # 2. SELECT MODEL (Waterfall Strategy)
         selected_model = None
-        model_names = ['gemini-1.5-flash', 'gemini-1.5-pro', 'gemini-pro']
+        # Try 2.5-flash (2026 model) then fall back to 1.5 series
+        model_options = ['gemini-2.5-flash', 'gemini-1.5-flash', 'gemini-pro']
         
-        for m_name in model_names:
+        for m_name in model_options:
             try:
-                selected_model = genai.GenerativeModel(model_name=m_name)
-                # Test a simple call to verify the model is accessible
-                print(f"Successfully initialized: {m_name}")
+                test_model = genai.GenerativeModel(model_name=m_name)
+                # Attempt a tiny test call to confirm 404 is gone
+                test_model.generate_content("test", generation_config={"max_output_tokens": 1})
+                selected_model = test_model
+                print(f"Model connected: {m_name}")
                 break
-            except Exception:
+            except Exception as e:
+                print(f"Attempt for {m_name} failed: {str(e)}")
                 continue
 
         if not selected_model:
-            raise Exception("No compatible Gemini models found.")
+            raise Exception("All Gemini models returned 404 or were unavailable.")
 
-        # 3. CONSTRUCT PROMPT
+        # 3. ANALYSIS PROMPT
         prompt = f"""
-        Act as a professional ATS. Analyze this Resume against the Job Description. 
-        Return ONLY a JSON object.
+        Act as a professional ATS. Analyze the Resume vs Job Description.
+        Return ONLY valid JSON.
         
         JD: {job_description}
         RESUME: {resume_text}
 
         JSON Structure:
         {{
-            "ats_score": number,
-            "match_percentage": number,
+            "ats_score": 0-100,
+            "match_percentage": 0-100,
             "detected_skills": [],
             "missing_skills": [],
             "bullet_point_suggestions": [],
-            "overall_verdict": "string"
+            "overall_verdict": "Your professional analysis"
         }}
         """
 
-        # 4. GENERATE CONTENT
+        # 4. GENERATION
         response = selected_model.generate_content(prompt)
         
-        # 5. ROBUST JSON PARSING
+        # 5. PARSE JSON
         try:
-            # Clean the response text to find the JSON block
-            json_match = re.search(r'\{.*\}', response.text, re.DOTALL)
-            if json_match:
-                return json.loads(json_match.group())
-            else:
-                print(f"Raw AI Response: {response.text}")
-                raise Exception("AI response did not contain valid JSON.")
-        except Exception as parse_error:
-            print(f"Parsing Error: {parse_error}")
-            raise Exception("Failed to parse AI analysis results.")
+            json_str = re.search(r'\{.*\}', response.text, re.DOTALL).group()
+            return json.loads(json_str)
+        except Exception:
+            print(f"Failed to parse AI output: {response.text}")
+            raise Exception("AI output format error.")
 
     except Exception as e:
-        print(f"SERVER ERROR: {str(e)}")
+        print(f"FINAL BACKEND ERROR: {str(e)}")
         return {
             "error": str(e),
             "ats_score": 0,
-            "match_percentage": 0,
-            "overall_verdict": f"Status: {str(e)}"
+            "overall_verdict": f"System Alert: {str(e)}"
         }
 
 if __name__ == "__main__":
     import uvicorn
-    # Using environment variable for Port to satisfy Render/Heroku
     port = int(os.environ.get("PORT", 8000))
     uvicorn.run(app, host="0.0.0.0", port=port)
