@@ -27,7 +27,7 @@ function App() {
 
     try {
       setLoading(true)
-      setStatus("Uploading...")
+      setStatus("Connecting backend...")
 
       const form = new FormData()
       form.append("file", file)
@@ -37,24 +37,37 @@ function App() {
         "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/",
         form,
         {
-          timeout: 120000
+          timeout: 180000
         }
       )
 
       console.log("STATUS:", res.status)
       console.log("DATA:", res.data)
 
+      // ❗ VALIDATION ADDED (IMPORTANT FIX)
+      if (res.status !== 200) {
+        setStatus("Server error: " + res.status)
+        return
+      }
+
+      if (res.data?.error) {
+        setStatus("Backend error: " + res.data.error)
+        return
+      }
+
       setResult(res.data)
-      setStatus("Done")
+      setStatus("Analysis completed")
 
     } catch (err) {
 
       console.log(err)
 
       if (err.code === "ECONNABORTED") {
-        setStatus("Server is slow (Render cold start). Try again.")
+        setStatus("Server is waking up (Render cold start)")
+      } else if (err.message.includes("Network Error")) {
+        setStatus("Backend not reachable")
       } else {
-        setStatus("Backend not responding")
+        setStatus("Request failed")
       }
 
     } finally {
