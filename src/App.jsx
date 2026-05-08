@@ -1,6 +1,7 @@
 import React, { useState } from "react";
 import axios from "axios";
 
+// Your Render Backend URL
 const API_URL = "https://ai-resume-analyzer-x2oz.onrender.com/upload-resume/";
 
 function App() {
@@ -12,6 +13,7 @@ function App() {
   const handleUpload = async () => {
     if (!file) return alert("Please select a PDF file first.");
     setLoading(true);
+    setData(null); // Clear old results before new analysis
     
     const formData = new FormData();
     formData.append("file", file);
@@ -19,9 +21,15 @@ function App() {
 
     try {
       const res = await axios.post(API_URL, formData);
-      setData(res.data);
+      // Safeguard: Ensure res.data exists before setting it
+      if (res.data) {
+        setData(res.data);
+      } else {
+        throw new Error("No data received from AI.");
+      }
     } catch (err) {
-      alert("Error connecting to backend.");
+      console.error(err);
+      alert("Error: Backend is likely waking up. Please wait 30 seconds and try again.");
     } finally {
       setLoading(false);
     }
@@ -40,7 +48,7 @@ function App() {
             <input 
               type="file" accept=".pdf" 
               onChange={(e) => setFile(e.target.files[0])}
-              className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700"
+              className="w-full text-sm text-gray-400 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:bg-blue-600 file:text-white hover:file:bg-blue-700 cursor-pointer"
             />
           </div>
 
@@ -50,44 +58,59 @@ function App() {
               rows="5" value={jobDesc}
               onChange={(e) => setJobDesc(e.target.value)}
               placeholder="Paste the job requirements here..."
-              className="w-full bg-[#0d1117] border border-gray-700 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none"
+              className="w-full bg-[#0d1117] border border-gray-700 rounded-lg p-3 focus:ring-2 focus:ring-blue-500 outline-none transition-all"
             />
           </div>
 
           <button 
             onClick={handleUpload}
             disabled={loading}
-            className="w-full bg-blue-600 py-3 rounded-lg font-bold hover:bg-blue-500 transition-all disabled:bg-gray-700"
+            className="w-full bg-blue-600 py-3 rounded-lg font-bold hover:bg-blue-500 transition-all disabled:bg-gray-700 disabled:cursor-not-allowed"
           >
-            {loading ? "AI is Analyzing..." : "Analyze Resume"}
+            {loading ? "AI is Analyzing (this may take a minute)..." : "Analyze Resume"}
           </button>
         </div>
 
         {/* Results Section */}
         {data && (
-          <div className="mt-10 space-y-6">
+          <div className="mt-10 space-y-6 animate-in fade-in duration-500">
             <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
               <div className="bg-gray-900 p-6 rounded-xl border-l-4 border-green-500">
                 <p className="text-gray-400 text-xs uppercase font-bold">ATS Score</p>
-                <h2 className="text-4xl font-bold text-green-400">{data.ats_score}%</h2>
+                <h2 className="text-4xl font-bold text-green-400">{data?.ats_score || 0}%</h2>
               </div>
               <div className="bg-gray-900 p-6 rounded-xl border-l-4 border-blue-500">
                 <p className="text-gray-400 text-xs uppercase font-bold">JD Match</p>
-                <h2 className="text-4xl font-bold text-blue-400">{data.match_percentage}%</h2>
+                <h2 className="text-4xl font-bold text-blue-400">{data?.match_percentage || 0}%</h2>
               </div>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl">
               <h3 className="text-xl font-bold mb-4 text-yellow-500">Expert Verdict</h3>
-              <p className="text-gray-300 leading-relaxed">{data.overall_verdict}</p>
+              <p className="text-gray-300 leading-relaxed">
+                {data?.overall_verdict || "Analysis complete. Review the suggestions below."}
+              </p>
             </div>
 
             <div className="bg-gray-900 p-6 rounded-xl">
               <h3 className="text-xl font-bold mb-4 text-blue-400">Actionable Suggestions</h3>
               <ul className="list-disc list-inside space-y-2 text-gray-300">
-                {data.bullet_point_suggestions.map((s, i) => <li key={i}>{s}</li>)}
+                {/* Fixed the map error by using optional chaining and fallback to empty array */}
+                {(data?.bullet_point_suggestions || []).map((s, i) => (
+                  <li key={i} className="hover:text-white transition-colors">{s}</li>
+                ))}
+                {(!data?.bullet_point_suggestions || data.bullet_point_suggestions.length === 0) && (
+                  <li className="text-gray-500 italic">No specific suggestions generated.</li>
+                )}
               </ul>
             </div>
+            
+            <button 
+                onClick={() => { setData(null); setFile(null); setJobDesc(""); }}
+                className="w-full bg-gray-800 py-2 rounded-lg text-sm text-gray-400 hover:text-white transition-all"
+            >
+                Clear and Analyze New Resume
+            </button>
           </div>
         )}
       </div>
