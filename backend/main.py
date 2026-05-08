@@ -4,7 +4,7 @@ import google.generativeai as genai
 from fastapi import FastAPI, UploadFile, File, Form
 
 # You get this key for FREE from Google AI Studio
-genai.configure(api_key="YOUR_FREE_GEMINI_KEY")
+genai.configure(api_key="Gemini Key")
 model = genai.GenerativeModel('gemini-1.5-flash')
 
 @app.post("/upload-resume/")
